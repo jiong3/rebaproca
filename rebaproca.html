@@ -184,10 +184,8 @@
         for (let count = 0; count <= item.limit; count++) {
           let newSum = currentSum + count * item.value;
           // Append count copies of item.value to our combination.
-          let added = [];
           for (let i = 0; i < count; i++) {
             currentCombo.push(item.value);
-            added.push(item.value);
           }
           generateCombinations(items, index + 1, newSum, currentCombo, combinations);
           // Remove the added items before next iteration.

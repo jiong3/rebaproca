@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title>Resistance Band Progression Calculator</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 20px;
+        line-height: 1.6;
+      }
+      h1 {
+        text-align: center;
+      }
+      form {
+        margin-bottom: 20px;
+      }
+      label {
+        display: block;
+        margin-bottom: 8px;
+      }
+      input[type="text"] {
+        width: 300px;
+        padding: 4px;
+        margin-right: 10px;
+      }
+      input[type="checkbox"] {
+        margin-right: 5px;
+      }
+      button {
+        padding: 6px 12px;
+        font-size: 1em;
+      }
+      #chartContainer {
+        text-align: center;
+      }
+      #chartCanvas {
+        border: 1px solid #ccc;
+        margin-bottom: 20px;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+      table, th, td {
+        border: 1px solid #ccc;
+      }
+      th, td {
+        padding: 6px 8px;
+        text-align: center;
+      }
+      tbody tr:nth-child(even) {
+        background: #f9f9f9;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Resistance Band Progression Calculator</h1>
+    <form id="calcForm">
+      <label>
+        Band weights (comma‐separated):
+        <input type="text" id="bandWeights" value="8,12,18,22,28,64" />
+      </label>
+      <label>
+        <input type="checkbox" id="twoSets">
+        Two sets (each band can be used twice)
+      </label>
+      <label>
+        <input type="checkbox" id="doubled">
+        Doubled (each band weight is doubled for the calculation)
+      </label>
+      <label>
+        Target range minimum:
+        <input type="text" id="targetMin" value="5" />
+      </label>
+      <label>
+        Target range maximum:
+        <input type="text" id="targetMax" value="100" />
+      </label>
+      <button type="submit">Calculate</button>
+    </form>
+    
+    <div id="chartContainer">
+      <canvas id="chartCanvas" width="600" height="400"></canvas>
+    </div>
+    
+    <div id="tableContainer">
+      <table id="resultTable">
+        <thead>
+          <tr>
+            <th>Target</th>
+            <th>Achieved Sum</th>
+            <th>Bands Used</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Table rows go here -->
+        </tbody>
+      </table>
+    </div>
+    
+    <script>
+      // When the DOM is loaded, attach handlers.
+      document.getElementById("calcForm").addEventListener("submit", function(e) {
+        e.preventDefault();
+        calculateProgression();
+      });
+      
+      // Also trigger an initial calculation when the page loads.
+      window.addEventListener("load", calculateProgression);
+      
+      // Main function to calculate progression and update chart and table.
+      function calculateProgression() {
+        // Get the input values.
+        let bandWeightsInput = document.getElementById("bandWeights").value;
+        let twoSets = document.getElementById("twoSets").checked;
+        let doubled = document.getElementById("doubled").checked;
+        let targetMin = parseFloat(document.getElementById("targetMin").value);
+        let targetMax = parseFloat(document.getElementById("targetMax").value);
+        
+        // Parse band weights from the comma‐separated input.
+        let weightStrings = bandWeightsInput.split(",");
+        let weights = [];
+        weightStrings.forEach(function(str) {
+          let num = parseFloat(str.trim());
+          if (!isNaN(num)) {
+            // If the "doubled" option is true, multiply by 2.
+            weights.push(doubled ? num * 2 : num);
+          }
+        });
+        if (weights.length === 0) {
+          alert("Please provide at least one valid band weight.");
+          return;
+        }
+        
+        // Determine maximum available count for each band weight.
+        let maxCount = twoSets ? 2 : 1;
+        // Create a list of items (each item is a distinct band weight with a usage limit).
+        // (Duplicates are considered as independent items in our recursive choice.)
+        // We will do a recursion over the distinct bands and allow using 0...maxCount times.
+        let items = weights.map(function(w) {
+          return { value: w, limit: maxCount };
+        });
+        
+        // Generate all possible combinations from these items.
+        let combinations = [];
+        generateCombinations(items, 0, 0, [], combinations);
+        // Now, for each target integer, choose the combination that sums to as close as possible (exact if possible)
+        // without exceeding the target.
+        let results = [];
+        for (let t = targetMin; t <= targetMax; t++) {
+          let best = { sum: 0, combo: [] };
+          // We iterate over all combinations and find the one with the highest sum not exceeding t.
+          for (let i = 0; i < combinations.length; i++) {
+            let comb = combinations[i];
+            if (comb.sum <= t && comb.sum > best.sum) {
+              best = comb;
+              // Early exit if exact match is found.
+              if (best.sum === t) { 
+                break;
+              }
+            }
+          }
+          results.push({ target: t, achieved: best.sum, bandsUsed: best.combo });
+        }
+        
+        drawChart(results);
+        buildTable(results);
+      }
+      
+      // Recursive function that generates all combinations.
+      // items: array of {value, limit}
+      // index: current index in items
+      // currentSum: the sum so far
+      // currentCombo: array of band weights used so far
+      // combinations: array to store { sum, combo } objects.
+      function generateCombinations(items, index, currentSum, currentCombo, combinations) {
+        if (index === items.length) {
+          combinations.push({ sum: currentSum, combo: currentCombo.slice() });
+          return;
+        }
+        let item = items[index];
+        // Try using 0,1,...,item.limit copies of the current weight.
+        for (let count = 0; count <= item.limit; count++) {
+          let newSum = currentSum + count * item.value;
+          // Append count copies of item.value to our combination.
+          let added = [];
+          for (let i = 0; i < count; i++) {
+            currentCombo.push(item.value);
+            added.push(item.value);
+          }
+          generateCombinations(items, index + 1, newSum, currentCombo, combinations);
+          // Remove the added items before next iteration.
+          for (let i = 0; i < count; i++) {
+            currentCombo.pop();
+          }
+        }
+      }
+      
+      // Draw a simple diagram on the canvas.
+      function drawChart(results) {
+        let canvas = document.getElementById("chartCanvas");
+        let ctx = canvas.getContext("2d");
+        // Clear canvas.
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Set margins and determine scales.
+        let margin = 40;
+        let width = canvas.width;
+        let height = canvas.height;
+        
+        // Horizontal scale: target range t from min to max.
+        let tMin = results[0].target;
+        let tMax = results[results.length - 1].target;
+        let xScale = (width - 2 * margin) / (tMax - tMin);
+        
+        // Vertical scale: from 0 to maximum possible achieved sum.
+        // We can use the maximum achieved sum from our calculations.
+        let maxAchieved = 0;
+        results.forEach(function(res) {
+          if (res.achieved > maxAchieved) maxAchieved = res.achieved;
+        });
+        // Also set minimum to 0.
+        let yScale = (height - 2 * margin) / (maxAchieved || 1);
+        
+        // Draw axes.
+        ctx.beginPath();
+        ctx.moveTo(margin, margin);
+        ctx.lineTo(margin, height - margin);
+        ctx.lineTo(width - margin, height - margin);
+        ctx.strokeStyle = "#333";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        
+        // Draw axis labels (simple ticks).
+        ctx.fillStyle = "#333";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        // x-axis ticks: choose a few ticks.
+        let numXTicks = 10;
+        for (let i = 0; i <= numXTicks; i++) {
+          let tVal = tMin + (tMax - tMin) * i / numXTicks;
+          let x = margin + (tVal - tMin) * xScale;
+          ctx.beginPath();
+          ctx.moveTo(x, height - margin);
+          ctx.lineTo(x, height - margin + 5);
+          ctx.stroke();
+          ctx.fillText(Math.round(tVal), x, height - margin + 8);
+        }
+        // y-axis ticks.
+        ctx.textAlign = "right";
+        ctx.textBaseline = "middle";
+        let numYTicks = 5;
+        for (let i = 0; i <= numYTicks; i++) {
+          let yVal = maxAchieved * i / numYTicks;
+          let y = height - margin - yVal * yScale;
+          ctx.beginPath();
+          ctx.moveTo(margin - 5, y);
+          ctx.lineTo(margin, y);
+          ctx.stroke();
+          ctx.fillText(yVal.toFixed(0), margin - 8, y);
+        }
+        
+        // Plot the data points and connect them with lines.
+        ctx.strokeStyle = "blue";
+        ctx.fillStyle = "red";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        results.forEach(function(res, index) {
+          let x = margin + (res.target - tMin) * xScale;
+          let y = height - margin - res.achieved * yScale;
+          if (index === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+        });
+        ctx.stroke();
+        
+        // Draw points.
+        results.forEach(function(res) {
+          let x = margin + (res.target - tMin) * xScale;
+          let y = height - margin - res.achieved * yScale;
+          ctx.beginPath();
+          ctx.arc(x, y, 3, 0, 2 * Math.PI);
+          ctx.fill();
+        });
+      }
+      
+      // Build the results table.
+      function buildTable(results) {
+        let tbody = document.querySelector("#resultTable tbody");
+        tbody.innerHTML = ""; // Clear previous rows.
+        results.forEach(function(res) {
+          let tr = document.createElement("tr");
+          
+          let tdTarget = document.createElement("td");
+          tdTarget.textContent = res.target;
+          
+          let tdAchieved = document.createElement("td");
+          tdAchieved.textContent = res.achieved;
+          
+          let tdBands = document.createElement("td");
+          // If there are any bands used, join them with commas.
+          tdBands.textContent = res.bandsUsed.length > 0 ? res.bandsUsed.join(", ") : "-";
+          
+          tr.appendChild(tdTarget);
+          tr.appendChild(tdAchieved);
+          tr.appendChild(tdBands);
+          tbody.appendChild(tr);
+        });
+      }
+    </script>
+  </body>
+</html>
